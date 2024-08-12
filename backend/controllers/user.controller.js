@@ -1,6 +1,7 @@
 import User from "../models/user.model.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken"
+import getDataUri from "../utils/datauri.js";
 const JWT_SECRET = process.env.JWT_SECRET;
 
 export const register = async (req, res) => {
@@ -114,14 +115,50 @@ export const getProfile = async (req, res) => {
     }
 };
 
-export const updateProfile = async (req, res) => {
+export const editProfile = async (req, res) => {
     try {
         const userId = req.id;
-        let user = await User.findById(userId);
+        const {bio, gender} = req.body;
+        const profilePicture = req.file;
+
+        let cloudResponse;
+
+        if(profilePicture){
+            const fileUri = getDataUri(profilePicture);
+            cloudResponse = await cloudinary.uploader.upload(fileUri);
+        }
+
+        const user = await User.findById(userId);
         if(!user) {
             return res.status(404).json({ message: "User not found", success: false });
         }
+
+        if(bio) user.bio = bio;
+        if(gender) user.gender = gender;
+        if(profilePicture) user.profilePicture = cloudResponse?.secure_url;
+        await user.save();
+        return res.status(200).json({ message: "Profile updated successfully", success: true, user });
+
+
     } catch (error) {
-        
+        console.log(error)
+        return res.status(500).json({ message: "Internal server error while updating profile", success: false });
+    }
+}
+
+export const getSuggestedUsers = async (req, res) => {
+    try {
+        const userId = req.id;
+        const user = await User.find(userId);
+        if(!user) {
+            return res.status(404).json({ message: "User not found", success: false });
+        }
+
+        const following = user.following;
+        const suggestedUsers = await User.find({ _id: { $nin: following } }).limit(10).select("-password");
+        return res.status(200).json({ message: "Suggested users fetched successfully", success: true, suggestedUsers });
+    } catch (error) {
+        console.log(error)
+        return res.status(500).json({ message: "Internal server error while fetching suggested users", success: false });
     }
 }
