@@ -2,6 +2,9 @@ import User from "../models/user.model.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken"
 import getDataUri from "../utils/datauri.js";
+import cloudinary from "../utils/cloudinary.js";
+import dotenv from "dotenv"
+dotenv.config()
 const JWT_SECRET = process.env.JWT_SECRET;
 
 export const register = async (req, res) => {
@@ -61,7 +64,7 @@ export const login = async (req, res) => {
             return res.status(400).json({ message: "Invalid credentials", success: false });
         }
 
-        const token = await JsonWebTokenError.sign(
+        const token = await jwt.sign(
             {userId: user._id},
             JWT_SECRET,
             {expiresIn: "1d"}
@@ -102,7 +105,7 @@ export const logout = async (req, res) => {
 export const getProfile = async (req, res) => {
     try {
         const userId = req.params.id;
-        let user = await User.findById(userId);
+        let user = await User.findById(userId).select("-password");
 
         if(!user) {
             return res.status(404).json({ message: "User not found", success: false });
@@ -128,7 +131,7 @@ export const editProfile = async (req, res) => {
             cloudResponse = await cloudinary.uploader.upload(fileUri);
         }
 
-        const user = await User.findById(userId);
+        const user = await User.findById(userId).select("-password");
         if(!user) {
             return res.status(404).json({ message: "User not found", success: false });
         }
@@ -148,17 +151,59 @@ export const editProfile = async (req, res) => {
 
 export const getSuggestedUsers = async (req, res) => {
     try {
-        const userId = req.id;
-        const user = await User.find(userId);
+        const suggestedUsers = await User.find({ _id: { $ne: req.id } }).select("-password");
+        if (!suggestedUsers) {
+            return res.status(400).json({
+                message: 'Currently do not have any users',
+            })
+        };
+        return res.status(200).json({
+            success: true,
+            users: suggestedUsers
+        })
+    } catch (error) {
+        console.log(error);
+    }
+};
+
+export const followOrUnfollow = async (req, res) => {
+    try {
+        const asFollower = req.id;
+        const toFollow = req.params.id;
+        if(asFollower === toFollow) {
+            return res.status(400).json({ message: "You cannot follow/unfollow yourself", success: false });
+        }
+
+        const user = await User.findById(asFollower);
         if(!user) {
             return res.status(404).json({ message: "User not found", success: false });
         }
 
-        const following = user.following;
-        const suggestedUsers = await User.find({ _id: { $nin: following } }).limit(10).select("-password");
-        return res.status(200).json({ message: "Suggested users fetched successfully", success: true, suggestedUsers });
+        const targetUser = await User.findById(toFollow);
+        if(!targetUser) {
+            return res.status(404).json({ message: "Target user not found", success: false });
+        }
+
+        // check i have to follow it or unfollow
+
+        const isFollowing = user.following.includes(toFollow);
+        if(isFollowing) {
+            // unfollow
+             await Promise.all([
+                User.updateOne({_id: asFollower}, {$pull: {following: toFollow}}),
+                User.updateOne({_id: toFollow}, {$pull: {followers: asFollower}}),
+            ])
+            return res.status(200).json({ message: "Unfollowed successfully", success: true });
+        } else {
+            // follow
+            await Promise.all([
+                User.updateOne({_id: asFollower}, {$push: {following: toFollow}}),
+                User.updateOne({_id: toFollow}, {$push: {followers: asFollower}}),
+            ])
+            return res.status(200).json({ message: "Followed successfully", success: true });
+        }
     } catch (error) {
-        console.log(error)
-        return res.status(500).json({ message: "Internal server error while fetching suggested users", success: false });
+        console.error(error)
+        return res.status(500).json({ message: "Internal server error while following/unfollowing user", success: false });
     }
 }

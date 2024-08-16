@@ -1,25 +1,28 @@
 import jwt from "jsonwebtoken";
-const JWT_SECRET = process.env.JWT_SECRET;
-
-const isAuthenticated = async (req, res, next) => {
+const isAuthenticated = async (req,res,next)=>{
     try {
-        const token = req.cookie.token;
-        if(!token) {
-            return res.status(401).json({ message: "Unauthenticated user", success: false });
+        const token = req.cookies.token;
+        if(!token){
+            return res.status(401).json({
+                message:'User not authenticated',
+                success:false
+            });
         }
-
-        const decoded = jwt.verify(token, JWT_SECRET);
-
-        if(!decoded) {
-            return res.status(401).json({ message: "Invalid token", success: false });
+        const decode = jwt.verify(token, process.env.JWT_SECRET);
+        if(!decode){
+            return res.status(401).json({
+                message:'Invalid',
+                success:false
+            });
         }
-
-        req.id = decoded.userId;
+        req.id = decode.userId;
         next();
     } catch (error) {
-        console.log(error)
-        return res.status(401).json({ message: "Something wrong happened in authentication middleware", success: false });
+        console.log(error);
+        return res.status(401).json({
+            message:'User not authenticated',
+            success:false
+        });
     }
 }
-
 export default isAuthenticated;
